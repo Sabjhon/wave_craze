@@ -178,6 +178,17 @@ class MainTab(QWidget):
         self.com_port_combo.setFixedHeight(30)
         self.com_port_combo.setFixedWidth(100)
         self.horizontalLayout.addWidget(self.com_port_combo)
+        
+        self.baud_rate_label = QtWidgets.QLabel(self)
+        self.baud_rate_label.setObjectName("baud_rate_label")
+        self.baud_rate_label.setText("Baud Rate:")
+        self.horizontalLayout.addWidget(self.baud_rate_label)
+        
+        self.baud_rate_combo = QtWidgets.QComboBox(self)
+        self.baud_rate_combo.setObjectName("baud_rate_combo")
+        self.baud_rate_combo.setFixedHeight(30)
+        self.baud_rate_combo.setFixedWidth(100)
+        self.horizontalLayout.addWidget(self.baud_rate_combo)
 
         # Add the seconds selection combo box to the horizontal layout
         self.seconds_label = QtWidgets.QLabel(self)

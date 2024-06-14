@@ -1,4 +1,4 @@
-import time
+
 import os
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot, QThreadPool
 from PyQt6.QtWidgets import QMainWindow, QTabWidget
@@ -8,16 +8,17 @@ import toml
 import serial
 import struct
 import numpy as np
-import operator
 import csv
 from datetime import datetime
 from main_gui import *
 import serial.tools.list_ports
 from PyQt6.QtWidgets import QTableWidgetItem
 from PyQt6 import QtWidgets
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QMessageBox,QComboBox
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFileDialog
+from PyQt6.QtCore import QTimer
+import operator
 
 def roll(array):
     return np.roll(array, -1)
@@ -118,18 +119,70 @@ class MainWindow(QMainWindow):
         self.browse_button.setText("Browse")
         self.browse_button.clicked.connect(self.open_file_dialog)
         self.settingsTab.tableWidget.keyPressEvent = self.handle_key_press_event
-        self.mathTab.add_button.clicked.connect(self.add_sensor_values)
+        self.mathTab.add_button.clicked.connect(self.add_button_clicked)
         self.config = self.load_config()
         self.add_val = self.config.get('added_values', {})
-        # Other initialization code
+        self.new_sensor_name = None
+        self.flag = None
+        self.added_data = []
+        self.operations = []
+        self.added_values = {}
+        self.add_values_enabled = True
+        # Initialize combo box for baud rates
+        self.baud_rate_combo = QComboBox()  
+        self.b_rates = ["300", "600", "750", "1200", "2400", "4800", "9600", "115200", "19200", "38400", "57600"]
+        self.viewTab.baud_rate_combo.addItems(self.b_rates)
+        
+        # Connect the signal to the handler method
+        self.viewTab.baud_rate_combo.currentIndexChanged.connect(self.handle_baud_rate_change)
+        self.mark = 0
+        self.serial_port = None  
+        self.baud_rate = 115200  
 
+    def select_port(self):
+        ports = serial.tools.list_ports.comports()
+        self.viewTab.com_port_combo.clear()  # Clear existing items
+        self.viewTab.com_port_combo.addItems([port.device for port in ports])
+        self.viewTab.com_port_combo.activated.connect(self.update_serial_port)
+
+    def handle_baud_rate_change(self):
+        self.baud_rate = int(self.viewTab.baud_rate_combo.currentText())
+        print("Selected Baud Rate:", self.baud_rate)
+        self.update_serial_port(self.viewTab.com_port_combo.currentIndex())  # Update the serial port with the new baud rate
+
+    def update_serial_port(self, index):
+        selected_port = self.viewTab.com_port_combo.itemText(index)
+        if selected_port:
+            try:
+                self.setup_serial_connection(selected_port, self.baud_rate)
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Error opening serial port: {e}")
+                QApplication.processEvents()  # Force processing of events to show the message box
+        else:
+            QMessageBox.warning(self, "Warning", "No COM port selected")
+            QApplication.processEvents()  # Force processing of events to show the message box
+
+    def setup_serial_connection(self, port, baud_rate):
+        if self.serial_port is not None and self.serial_port.is_open:
+            self.serial_port.close()
+        
+        try:
+            self.serial_port = serial.Serial(
+                port=port,
+                baudrate=baud_rate,
+                timeout=1  # Adjust timeout as needed
+            )
+            print(f"Serial connection established with port: {port} and baud rate: {baud_rate}")
+        except serial.SerialException as e:
+            print(f"Failed to establish serial connection: {e}")
+            
     def load_config(self):
         config_path = 'config.toml'
         if os.path.exists(config_path):
             return toml.load(config_path)
         else:
             return {}
-
+        
     def open_file_dialog(self):
         file_name, _ = QFileDialog.getOpenFileName(self, "Open File", "", "TOML Files (*.toml)")
 
@@ -160,7 +213,6 @@ class MainWindow(QMainWindow):
 
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Error loading TOML file: {e}")
-
 
     def handle_key_press_event(self, event):
         if event.key() == Qt.Key.Key_Delete:
@@ -248,10 +300,7 @@ class MainWindow(QMainWindow):
         return config.get('y_limit', {})
 
     # Logic for the com port selection
-    def select_port(self):
-        ports = serial.tools.list_ports.comports()
-        self.viewTab.com_port_combo.addItems([port.name for port in ports])
-        self.viewTab.com_port_combo.activated.connect(self.update_serial_port)
+
     # logic for the data in seconds 
     def select_time(self):
         selected_time = int(self.viewTab.seconds_combo.currentText())
@@ -269,18 +318,6 @@ class MainWindow(QMainWindow):
     def update_time(self):
         self.time = [1, 5, 10]
         self.viewTab.seconds_combo.addItems([str(t) for t in self.time])
-
-    def update_serial_port(self, index):
-        selected_port = self.viewTab.com_port_combo.itemText(index)
-        if selected_port:
-            try:
-                self.serial_port = serial.Serial(selected_port, 115200)
-            except Exception as e:
-                QMessageBox.warning(self, "Error", f"Error opening serial port: {e}")
-                QtWidgets.QApplication.processEvents()  # Force processing of events to show the message box
-        else:
-            QMessageBox.warning(self, "Warning", "No COM port selected")        
-            QtWidgets.QApplication.processEvents()  # Force processing of events to show the message box
 
     def toggle_record(self):
         if not self.recording:
@@ -344,15 +381,23 @@ class MainWindow(QMainWindow):
     def create_curve(self, plot_widget, index):
         plot_widget.clear()
         colors = ['r', 'g', 'b', 'y']
-        color = colors[index % len(colors)]  # Wrap around the index if it exceeds the length of colors
+        color = colors[index % len(colors)]
         curve = plot_widget.plot(pen=pg.mkPen(color=color, width=2.5), name=f"Parameter {index+1}")
 
-        # Update f_data for the selected sensor
+        # Update f_data for the selected sensor or added sensor
         if index < len(self.parameters):
+            if index >= len(self.f_data):
+                num_data_points = len(self.x_data)
+                self.f_data.extend([np.zeros(num_data_points) for _ in range(index - len(self.f_data) + 1)])
+            curve.setData(self.x_data, self.f_data[index], autoDownsample=True)
+        else:
             num_data_points = len(self.x_data)
-            self.f_data[index] = np.zeros(num_data_points)
-        curve.setData(self.x_data, self.f_data[index], autoDownsample=True)
+            if index >= len(self.f_data):
+                self.f_data.extend([np.zeros(num_data_points) for _ in range(index - len(self.f_data) + 1)])
+            curve.setData(self.x_data, self.f_data[index], autoDownsample=True)
+            
         plot_widget.setXRange(self.x_data[0], self.x_data[-1])
+
         if index in self.curve_dict:
             self.curve_dict[index].append(curve)
         else:
@@ -364,6 +409,9 @@ class MainWindow(QMainWindow):
                 selected_index = self.combo_boxes[i].currentIndex()
                 if selected_index < len(self.parameters):
                     self.create_curve(self.plot_widgets[i], selected_index)
+                else:
+                    added_sensor_index = selected_index - len(self.parameters)
+                    self.create_curve(self.plot_widgets[i], added_sensor_index)
 
     def serial_read(self):
         if (self.serial_port.read() == b'\xff') and (self.serial_port.read() == b'\xff'):
@@ -394,29 +442,20 @@ class MainWindow(QMainWindow):
 
         self.val = format_str
 
-    def unpack_values(self, progress_callback):
-        while self.serial_port.is_open:
-            if self.serial_read():
-                try:
-                    self.return_str()
-                    payload_format = self.val
-                    payload_size = struct.calcsize(payload_format)
-                    self.unpacked_data = struct.unpack(payload_format, self.payload[:payload_size])
-                    progress_callback.emit(self.unpacked_data)
-                except struct.error as e:
-                    print("Error unpacking data:", e)
-            if self.trigger == 1:
-                self.trigger = 2
-                break
-    
     @pyqtSlot(list)
     def update_plot(self, data):
         if self.recording:
-            # Write data to CSV file
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S:%MS")
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]  # Microseconds to milliseconds
             self.csv_writer.writerow([current_time] + data)
 
-        for i, value in enumerate(data):
+        all_data = data.copy()
+
+        # Add the computed values to the data array
+        if self.add_values_enabled:
+            for sensor_name, added_value in self.added_values.items():
+                all_data.append(added_value)
+
+        for i, value in enumerate(all_data):
             for j, combo_box in enumerate(self.combo_boxes):
                 if combo_box.isVisible() and combo_box.currentIndex() == i:
                     parameter_name = combo_box.currentText()
@@ -426,57 +465,101 @@ class MainWindow(QMainWindow):
                             if len(self.f_data[index]) != len(self.x_data):
                                 self.f_data[index] = np.zeros_like(self.x_data)
                             else:
-                                self.f_data[index] = roll(self.f_data[index])
-                            # Convert boolean value to integer before updating the plot
+                                self.f_data[index] = np.roll(self.f_data[index], -1)
                             if isinstance(value, bool):
                                 value = int(value)
-
                             self.f_data[index][-1] = value
-                            # Update the plot every 10 data points
                             if len(self.f_data[index]) % 10 == 0:
                                 for curve in self.curve_dict.get(index, []):
                                     curve.setData(self.x_data[:len(self.f_data[index])], self.f_data[index])
-                                    
-    def read_val(self):
-        return self.config.get('added_values', {})
-    def add_sensor_values(self):
+
+    def add_button_clicked(self):
         sensor1 = self.mathTab.dropdown1.currentText()
         sensor2 = self.mathTab.dropdown2.currentText()
 
-        if sensor1 and sensor2:
-            try:
-                values1 = self.parameters.get(sensor1, [])
-                values2 = self.parameters.get(sensor2, [])
+        if sensor1 in self.parameters and sensor2 in self.parameters:
+            operator = self.mathTab.text_box.text().strip()
+            if operator not in ['+', '-', '/', '*']:
+                print("Invalid operator. Please enter +, -, /, or * in the text box.")
+                return
 
-                if not values1 or not values2:
-                    raise KeyError(f"Missing sensor data for {' and '.join([sensor1, sensor2])}")
+            new_sensor_name = f"{sensor1}_{operator}_{sensor2}"
+            self.parameters[new_sensor_name] = []
+            self.operations.append((sensor1, sensor2, operator, new_sensor_name))
 
-                if len(values1) == len(values2) == len(self.unpacked_data):
-                    added_values = [x + y for x, y in zip(values1, values2)]
-                    new_sensor_name = f"{sensor1}_{sensor2}_added"
+            self.config['parameters'] = self.parameters
 
-                    self.config['sensors'][new_sensor_name] = added_values
-                    with open('config.toml', 'w') as config_file:
-                        toml.dump(self.config, config_file)
+            for combo_box in self.combo_boxes:
+                combo_box.addItem(new_sensor_name)
+            self.mathTab.dropdown1.addItem(new_sensor_name)
+            self.mathTab.dropdown2.addItem(new_sensor_name)
 
-                    self.combo_boxes[0].addItem(new_sensor_name)
-                    QMessageBox.information(self, 'Success', f'Sensor values added and saved as {new_sensor_name}.')
-                else:
-                    QMessageBox.critical(self, 'Error', 'Selected sensors have different lengths or do not match the unpacked data length.')
-            except KeyError as e:
-                QMessageBox.critical(self, 'Error', f'Sensor data missing: {e}')
-        else:
-            QMessageBox.critical(self, 'Error', 'Please select two sensors.')
+            with open('config.toml', 'w') as config_file:
+                toml.dump(self.config, config_file)
 
-    # Stop the program 
+            print(f"New sensor added: {new_sensor_name}")
+
+            self.add_values_enabled = True
+
+    def add_and_plot_values(self):
+        for sensor1, sensor2, operator_str, new_sensor_name in self.operations:
+            if sensor1 in self.parameters and sensor2 in self.parameters:
+                index1 = list(self.parameters.keys()).index(sensor1)
+                index2 = list(self.parameters.keys()).index(sensor2)
+
+                if index1 < len(self.unpacked_data) and index2 < len(self.unpacked_data):
+                    value1 = self.unpacked_data[index1]
+                    value2 = self.unpacked_data[index2]
+
+                    operator_funcs = {
+                        '+': operator.add,
+                        '-': operator.sub,
+                        '*': operator.mul,
+                        '/': operator.truediv
+                    }
+
+                    if operator_str in operator_funcs:
+                        try:
+                            added_value = operator_funcs[operator_str](value1, value2)
+                        except ZeroDivisionError:
+                            print("Division by zero error.")
+                            continue
+                    else:
+                        print(f"Invalid operator: {operator_str}")
+                        continue
+
+                    self.added_values[new_sensor_name] = added_value
+
+    def unpack_values(self, progress_callback):
+        while self.serial_port.is_open:
+            if self.serial_read():
+                try:
+                    self.return_str()
+                    payload_format = self.val
+                    payload_size = struct.calcsize(payload_format)
+                    self.unpacked_data = struct.unpack(payload_format, self.payload[:payload_size])
+                    progress_callback.emit(self.unpacked_data)
+
+                    # Add and plot values after receiving new data if addition is enabled
+                    if self.add_values_enabled:
+                        self.add_and_plot_values()
+
+                except struct.error as e:
+                    print("Error unpacking data:", e)
+            if self.trigger == 1:
+                self.trigger = 2
+                break
+
     def stop_program(self):
         self.recording = False
         self.trigger = 1
+        self.flag = False
         self.viewTab.stop_button.setEnabled(False)
         self.viewTab.start_button.setEnabled(True)
 
     # Start the program
     def start_program(self):
+        self.flag = True
         self.worker_thread = Worker(self.unpack_values)
         self.worker_thread.signals.progress.connect(self.update_plot)
         self.worker_thread.signals.finished.connect(self.thread_complete)
@@ -540,7 +623,6 @@ class MainWindow(QMainWindow):
 
         config_path = os.path.join(config_dir, 'config.toml')
 
-        # Load the existing config if it exists, otherwise create a default config
         try:
             config = toml.load(config_path)
         except FileNotFoundError:
@@ -554,10 +636,7 @@ class MainWindow(QMainWindow):
                 },
                 'sampling_frequency': 1
             }
-
         parameters = {}
-
-        # Collect sensor parameters from the table
         for row in range(self.settingsTab.tableWidget.rowCount()):
             sensor_item = self.settingsTab.tableWidget.item(row, 0)
             datatype_item = self.settingsTab.tableWidget.item(row, 1)
@@ -566,7 +645,6 @@ class MainWindow(QMainWindow):
                 datatype = datatype_item.text().lower()
                 parameters[sensor] = datatype
 
-        # Check for unwanted values (datatypes)
         for sensor, datatype in parameters.items():
             if datatype not in ['float', 'int', 'long', 'bool', 'char']:
                 QMessageBox.warning(self, "Warning", f"Unwanted datatype '{datatype}' found for sensor '{sensor}'")
@@ -582,19 +660,16 @@ class MainWindow(QMainWindow):
         }
         config['y_limit'] = y_limits
         config['sampling_frequency'] = int(self.settingsTab.com_sf.text())
-
-        # Save the updated config to the 'config.toml' file
         with open(config_path, 'w') as f:
             toml.dump(config, f)
 
         print("Data saved successfully!")
         print("Updated parameters:", parameters)
         
-        # Update the main tab with the new settings
         self.update_main_tab()
         self.update_plot_from_settings()
         self.load_data()
-        
+
     def update_main_tab(self):
         config = self.read_config()
         y_limits = config.get('y_limit', {})
@@ -609,7 +684,11 @@ class MainWindow(QMainWindow):
                 print(f"Y limit key {y_limit_key} not found in y_limits")
             combo_box.clear()
             combo_box.addItems(parameters.keys())
-
+            self.mathTab.dropdown1.clear()
+            self.mathTab.dropdown1.addItems(parameters.keys())
+            self.mathTab.dropdown2.clear() 
+            self.mathTab.dropdown2.addItems(parameters.keys())
+        
     def update_plot_from_settings(self):
         y_limits = {
             'y1': [float(self.settingsTab.lineEdit.text()), float(self.settingsTab.lineEdit_5.text())],
@@ -646,8 +725,10 @@ class MainWindow(QMainWindow):
             
     def thread_complete(self):
         print("THREAD COMPLETED!")
-    def handle_error(self, error_tuple):
+        
+    def handle_error(self, error_tuple):       
         print("ERROR:", error_tuple[0])
+        
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     w = MainWindow()
