@@ -67,7 +67,7 @@ class MainWindow(QMainWindow):
         self.settingsTab = SettingTab()
 
         self.tabs.addTab(self.viewTab, "Realtime View")
-        self.tabs.addTab(self.mathTab, "MATH")
+        # self.tabs.addTab(self.mathTab, "MATH")
         self.tabs.addTab(self.settingsTab, "Settings")
         self.threadpool = QThreadPool()
         self.x_data = np.linspace(0, 100, 100)
@@ -109,8 +109,8 @@ class MainWindow(QMainWindow):
         self.is_running = False  
         self.viewTab.start_button.clicked.connect(self.handle_start)
         self.viewTab.stop_button.clicked.connect(self.handle_stop)
-        self.mathTab.dropdown1.addItems(self.parameters.keys())
-        self.mathTab.dropdown2.addItems(self.parameters.keys())
+        # self.mathTab.dropdown1.addItems(self.parameters.keys())
+        # self.mathTab.dropdown2.addItems(self.parameters.keys())
         self.browse_button = QtWidgets.QPushButton(self.settingsTab.verticalLayoutWidget)
         self.browse_button.setFixedHeight(30)
         self.browse_button.setFixedWidth(100)
@@ -119,14 +119,20 @@ class MainWindow(QMainWindow):
         self.browse_button.setText("Browse")
         self.browse_button.clicked.connect(self.open_file_dialog)
         self.settingsTab.tableWidget.keyPressEvent = self.handle_key_press_event
-        self.mathTab.add_button.clicked.connect(self.add_button_clicked)
+        # self.mathTab.add_sensor_button.clicked.connect(self.add_button_clicked)
+        # self.setup_connections()
+        # self.mathTab.dropdown2.addItems(['+', '-', '*', '(', ')'])
+        self.viewTab.com_port_combo.setCurrentIndex(-1)
         self.config = self.load_config()
         self.add_val = self.config.get('added_values', {})
         self.new_sensor_name = None
         self.flag = None
+        self.added_operations = []
         self.added_data = []
+        self.button_trig = 0
         self.operations = []
         self.added_values = {}
+        # self.mathTab.clear_button.clicked.connect(self.clear_operations)
         self.add_values_enabled = True
         # Initialize combo box for baud rates
         self.baud_rate_combo = QComboBox()  
@@ -441,7 +447,64 @@ class MainWindow(QMainWindow):
                 format_str += '?'
 
         self.val = format_str
-
+        
+    def setup_connections(self):
+        self.mathTab.add_sensor_button.clicked.connect(self.add_sensor_to_text_box)
+        self.mathTab.implement_button.clicked.connect(self.add_and_plot_values)
+        self.mathTab.add_operator_button.clicked.connect(self.add_operator_to_text_box)
+        self.mathTab.implement_button.clicked.connect(self.implement_operations)
+        self.mathTab.clear_button.clicked.connect(self.clear_operations)
+    
+    def add_sensor_to_text_box(self):
+        sensor = self.mathTab.dropdown1.currentText()
+        self.mathTab.text_box.setText(self.mathTab.text_box.text() + sensor)
+    
+    def add_operator_to_text_box(self):
+        operator = self.mathTab.dropdown2.currentText()
+        self.mathTab.text_box.setText(self.mathTab.text_box.text() + operator)
+    
+    def implement_operations(self):
+        expression = self.mathTab.text_box.text()
+        sensors_and_operators = self.parse_expression(expression)
+        
+        if sensors_and_operators:
+            new_sensor_name = expression
+            self.parameters[new_sensor_name] = []
+            self.added_operations.append((new_sensor_name, sensors_and_operators))
+            self.update_gui_with_new_sensor(new_sensor_name)
+            self.mathTab.text_box.clear()
+    
+    def parse_expression(self, expression):
+        import re
+        tokens = re.findall(r'[A-Za-z0-9_]+|[\+\-\*/]', expression)
+        if len(tokens) % 2 == 0:
+            print("Invalid expression.")
+            return None
+        
+        sensors_and_operators = []
+        for token in tokens:
+            if token in self.parameters:
+                sensors_and_operators.append(('sensor', token))
+            elif token in ['+', '-', '*', '/']:
+                sensors_and_operators.append(('operator', token))
+            else:
+                print(f"Invalid token: {token}")
+                return None
+        return sensors_and_operators
+    
+    def update_gui_with_new_sensor(self, new_sensor_name):
+        for combo_box in self.combo_boxes:
+            combo_box.addItem(new_sensor_name)
+        self.mathTab.dropdown1.addItem(new_sensor_name)
+        self.mathTab.dropdown2.addItem(new_sensor_name)
+    
+    def clear_operations(self):
+        self.added_operations.clear()
+        self.parameters = {k: v for k, v in self.parameters.items() if not any(op[0] == k for op in self.added_operations)}
+        self.mathTab.text_box.clear()
+        # Clear the added curves and reset the f_data
+        self.added_curve.clear()
+    
     @pyqtSlot(list)
     def update_plot(self, data):
         if self.recording:
@@ -686,8 +749,8 @@ class MainWindow(QMainWindow):
             combo_box.addItems(parameters.keys())
             self.mathTab.dropdown1.clear()
             self.mathTab.dropdown1.addItems(parameters.keys())
-            self.mathTab.dropdown2.clear() 
-            self.mathTab.dropdown2.addItems(parameters.keys())
+            # self.mathTab.dropdown2.clear() 
+            # self.mathTab.dropdown2.addItems(parameters.keys())
         
     def update_plot_from_settings(self):
         y_limits = {

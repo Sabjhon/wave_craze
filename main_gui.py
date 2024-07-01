@@ -176,6 +176,7 @@ class MainTab(QWidget):
         self.com_port_combo = QtWidgets.QComboBox(self)
         self.com_port_combo.setObjectName("com_port_combo")
         self.com_port_combo.setFixedHeight(30)
+        
         self.com_port_combo.setFixedWidth(100)
         self.horizontalLayout.addWidget(self.com_port_combo)
         
@@ -256,36 +257,67 @@ class functionTab(QWidget):
         self.dropdown1.setFixedHeight(30)
         self.dropdown1.setFixedWidth(100)
         self.horizontalLayout.addWidget(self.dropdown1)
+        
+        self.add_sensor_button = QPushButton(self)
+        self.add_sensor_button.setFixedHeight(30)
+        self.add_sensor_button.setFixedWidth(100)
+        self.add_sensor_button.setStyleSheet("background-color: rgb(7, 117, 127);")
+        self.add_sensor_button.setObjectName("Add")
+        self.add_sensor_button.setText("Add")
+        self.horizontalLayout.addWidget(self.add_sensor_button)
 
         self.dropdown2 = QtWidgets.QComboBox(self)
         self.dropdown2.setObjectName("dropdown2")
         self.dropdown2.setFixedHeight(30)
         self.dropdown2.setFixedWidth(100)
         self.horizontalLayout.addWidget(self.dropdown2)
-
-        # Add a QLabel with = symbol
-        equal_label = QtWidgets.QLabel("=")
-        equal_label.setObjectName("equal_label")
-        self.horizontalLayout.addWidget(equal_label)
         
+        self.add_operator_button = QPushButton(self)
+        self.add_operator_button.setFixedHeight(30)
+        self.add_operator_button.setFixedWidth(100)
+        self.add_operator_button.setStyleSheet("background-color: rgb(7, 117, 127);")
+        self.add_operator_button.setObjectName("Add")
+        self.add_operator_button.setText("Add")
+        self.horizontalLayout.addWidget(self.add_operator_button)
+
+        self.verticalLayout_2 = QtWidgets.QVBoxLayout(self)
+        self.verticalLayout_2.setObjectName("verticalLayout_2")
+        self.verticalLayout.addLayout(self.verticalLayout_2)
+
+        self.horizontalLayout_2 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_2.setObjectName("horizontalLayout_2")
+        self.verticalLayout_2.addLayout(self.horizontalLayout_2)
+
         self.text_box = QLineEdit(self)
         self.text_box.setObjectName("lineEdit")
+        self.text_box.setFixedWidth(100)
         self.text_box.setFixedHeight(30)
-        # self.text_box.setFixedWidth(100)
-        self.horizontalLayout.addWidget(self.text_box)
-        
-        self.add_button = QPushButton(self)
-        # self.add_button.setGeometry(QRect(580, 520, 93, 28))
-        self.add_button.setFixedHeight(30)
-        self.add_button.setFixedWidth(100)
-        self.add_button.setStyleSheet("background-color: rgb(7, 117, 127);")
-        self.add_button.setObjectName("Add")
-        self.add_button.setText( "Add ")
-        self.horizontalLayout.addWidget(self.add_button)
+        self.horizontalLayout_2.addWidget(self.text_box)
+
+        self.implement_button = QPushButton(self)
+        self.implement_button.setFixedHeight(30)
+        self.implement_button.setFixedWidth(100)
+        self.implement_button.setStyleSheet("background-color: rgb(7, 117, 127);")
+        self.implement_button.setObjectName("Implement")
+        self.implement_button.setText("Implement")
+        self.horizontalLayout_2.addWidget(self.implement_button)
+
+        self.clear_button = QPushButton(self)
+        self.clear_button.setFixedHeight(30)
+        self.clear_button.setFixedWidth(100)
+        self.clear_button.setStyleSheet("background-color: rgb(7, 117, 127);")
+        self.clear_button.setObjectName("Clear")
+        self.clear_button.setText("Clear")
+        self.horizontalLayout_2.addWidget(self.clear_button)
 
         self.plot_layout = QtWidgets.QVBoxLayout()
         self.plot_layout.setObjectName("plot_layout")
         self.verticalLayout.addLayout(self.plot_layout)
+
+        self.plot_layout_2 = QtWidgets.QVBoxLayout()
+        self.plot_layout_2.setObjectName("plot_layout_2")
+        self.verticalLayout.addLayout(self.plot_layout_2)
+
 
 class MainWindow_MultiTab(QMainWindow):
     def __init__(self):

@@ -3,5 +3,3 @@ sine = "float"
 lc2 = "int"
 ll = "int"
 "sine_*_ll" = []
-"sine_+_ll" = []
-"lc2_*_ll" = []
